@@ -214,8 +214,24 @@ Portfolio: ${JSON.stringify(context)}
 
 Verdict & JSON Block:
 \`\`\`json
-{"type": "analysis_result", "data": {"text": "A narrative explainining Phase 1 audit and Phase 2 research results", "recommendations": [{"action": "AL/SAT/KAPAT", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": 0, "suggested_quantity": 0}]}}
+{
+  "type": "analysis_result", 
+  "data": {
+    "text": "A narrative explainining Phase 1 audit and Phase 2 research results", 
+    "recommendations": [
+      {
+        "action": "AL/SAT/KAPAT", 
+        "asset": "BTCUSDT", 
+        "risk_level": "LOW", 
+        "reasoning_summary": "...", 
+        "suggested_price": 0, 
+        "suggested_quantity": 0
+      }
+    ]
+  }
+}
 \`\`\`
+Note: "suggested_quantity" can be 0 if you want the system to use the default safety budget, or a specific number to override it (e.g. for flipping a position).
 `;
 
         const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4);
@@ -247,14 +263,19 @@ Verdict & JSON Block:
 
             const livePrice = await getBinancePrice(r.asset);
             if (livePrice) {
+                // If AI suggested a specific quantity, use it. Otherwise calculate based on budget.
+                const finalQuantity = r.suggested_quantity > 0
+                    ? parseFloat(r.suggested_quantity)
+                    : parseFloat((budget / livePrice).toFixed(4));
+
                 tradeRecommendations.push({
                     symbol: r.asset,
-                    action: normalizedAction, // Normalized string
-                    originalAction: rawAction, // Keep for debugging
-                    quantity: parseFloat((budget / livePrice).toFixed(4)),
+                    action: normalizedAction,
+                    originalAction: rawAction,
+                    quantity: finalQuantity,
                     reason: r.reasoning_summary,
                     confidence: 0.9,
-                    price: livePrice
+                    price: r.suggested_price || livePrice
                 });
             }
         }
