@@ -124,18 +124,27 @@ app.post('/', async (req, res) => {
 
         console.log(`[Analyst] Processing Goal: ${userQuery}`);
 
-        let context = { userBalances: userBalances || [], userPositions: userPositions || [] };
-        const today = new Date().toISOString().split('T')[0];
+        // --- PHASE 0: Price Injection ---
+        console.log(`[Analyst] Phase 0: Fetching Real-Time Prices...`);
+        const assetsToHalt = ['BTCUSDT', 'ETHUSDT', 'PAXGUSDT'];
+        const priceMap = {};
+        for (const sym of assetsToHalt) {
+            const p = await getBinancePrice(sym);
+            if (p) priceMap[sym] = p;
+        }
+        const priceContext = Object.entries(priceMap).map(([s, p]) => `${s}: $${p}`).join(', ');
+        console.log(`[Analyst] Injected Price Context: ${priceContext}`);
 
         // --- PHASE 1: Portfolio Audit ---
         console.log(`[Analyst] Phase 1: Auditing Portfolio...`);
         const auditPrompt = `
 Today is ${today}. 
+CURRENT MARKET PRICES: ${priceContext}
 USER GOAL: "${userQuery}"
 PORTFOLIO: ${JSON.stringify(context)}
 
-Analyze the current portfolio status. 
-1. Evaluate open positions (PnL, Risk, Size).
+Analyze the current portfolio status using the verified MARKET PRICES above.
+1. Evaluate open positions (PnL, Risk, Size). Use the provided Prices to calculate current value.
 2. Check available USDT liquidity.
 3. Identify if any existing positions are in immediate danger or should be closed.
 
@@ -145,7 +154,7 @@ Output ONLY a JSON object:
   "recommended_adjustments": ["Asset names to close or reduce", "..."]
 }
 `;
-        const auditRes = await makeClaudeRequest("You are a Senior Portfolio Risk Manager.", auditPrompt, 0.2);
+        const auditRes = await makeClaudeRequest("You are a Senior Portfolio Risk Manager. ALWAYS use the provided CURRENT MARKET PRICES for calculations.", auditPrompt, 0.2);
         const auditContent = auditRes.content[0].text;
         let auditData;
         try { auditData = extractJSON(auditContent); }
@@ -204,9 +213,10 @@ Output ONLY a JSON object:
         const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
         const budget = Math.max(15, totalEquity * 0.1);
 
-        const systemPrompt = `InvestAI Synthesis Core (2026). Budget: $${budget.toFixed(2)}. Be extremely concise and logical. End with JSON in \`\`\`json\`\`\`.`;
+        const systemPrompt = `InvestAI Synthesis Core (2026). Budget: $${budget.toFixed(2)}. Current Prices: ${priceContext}. Be extremely concise and logical. End with JSON in \`\`\`json\`\`\`.`;
         const synthesisPrompt = `
 Goal: ${userQuery}
+Verified Prices: ${priceContext}
 Audit Findings: ${auditData.audit_findings}
 Adjustments Needed: ${JSON.stringify(auditData.recommended_adjustments)}
 Market Research: ${JSON.stringify(stepResults).substring(0, 4000)}
@@ -217,7 +227,7 @@ Verdict & JSON Block:
 {
   "type": "analysis_result", 
   "data": {
-    "text": "A narrative explainining Phase 1 audit and Phase 2 research results", 
+    "text": "A narrative explainining Phase 1 audit and Phase 2 research results. Explicitly mention current price context to reassure the user.", 
     "recommendations": [
       {
         "action": "AL/SAT/KAPAT", 
