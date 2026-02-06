@@ -152,15 +152,18 @@ Output ONLY a JSON object:
         catch (e) { auditData = { audit_findings: "Could not perform detailed audit, proceeding with caution.", recommended_adjustments: [] }; }
 
         // --- PHASE 2: Research Planning ---
-        console.log(`[Analyst] Phase 2: Planning Market Research...`);
+        console.log(`[Analyst] Phase 2: Planning Multi-Asset Research...`);
         const planPrompt = `
 Today is ${today}. 
 USER GOAL: "${userQuery}"
 PORTFOLIO AUDIT: "${auditData.audit_findings}"
 
+You are a Global Macro Researcher. We trade Crypto AND Precious Metals/Commodities (Gold, Silver, etc. via Binance/PAXG).
 Based on the audit and the goal, generate a research plan with 2 targeted, high-intent search queries for Tavily.
 DO NOT use the user goal itself as a search query. 
-Focus on finding data for assets mentioned in the audit or new opportunities aligned with the goal.
+Focus on finding data for:
+1. Crypto price action and technical trends.
+2. Precious Metals (Gold/Silver) trends or Macro/Commodity catalysts.
 
 Output ONLY a JSON object:
 {
