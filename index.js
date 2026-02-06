@@ -250,6 +250,9 @@ Verdict & JSON Block:
       {
         "action": "AL/SAT/KAPAT", 
         "asset": "BTCUSDT", 
+        "leverage": 1, // Integer between 1-20. Default 1 (Spot-like). Use higher leverage ONLY for very high confidence setups.
+        "stop_loss": 0, // Price to exit if trade goes wrong
+        "take_profit": 0, // Price to exit if trade goes right
         "risk_level": "LOW", 
         "reasoning_summary": "...", 
         "suggested_price": 0, 
@@ -260,6 +263,7 @@ Verdict & JSON Block:
 }
 \`\`\`
 Note: "suggested_quantity" can be 0 if you want the system to use the default safety budget, or a specific number to override it (e.g. for flipping a position).
+For CLOSE actions, leverage/SL/TP are ignored.
 `;
 
         const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4);
@@ -301,6 +305,9 @@ Note: "suggested_quantity" can be 0 if you want the system to use the default sa
                     action: normalizedAction,
                     originalAction: rawAction,
                     quantity: finalQuantity,
+                    leverage: Math.min(Math.max(r.leverage || 1, 1), 20), // Cap between 1x and 20x
+                    stopLoss: r.stop_loss || 0,
+                    takeProfit: r.take_profit || 0,
                     reason: r.reasoning_summary,
                     confidence: 0.9,
                     price: r.suggested_price || livePrice
