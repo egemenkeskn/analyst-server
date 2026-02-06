@@ -127,38 +127,93 @@ app.post('/', async (req, res) => {
         let context = { userBalances: userBalances || [], userPositions: userPositions || [] };
         const today = new Date().toISOString().split('T')[0];
 
-        // 1. Research Plan
-        const planPrompt = `Today: ${today} (2026). Goal: "${userQuery}". Output ONLY JSON: {"steps": [{"action": "market_search", "description": "...", "searchQuery": "..."}]}`;
-        const planRes = await makeClaudeRequest("You are a Lead Financial Researcher.", planPrompt);
-        const planContent = planRes.content[0].text;
+        // --- PHASE 1: Portfolio Audit ---
+        console.log(`[Analyst] Phase 1: Auditing Portfolio...`);
+        const auditPrompt = `
+Today is ${today}. 
+USER GOAL: "${userQuery}"
+PORTFOLIO: ${JSON.stringify(context)}
 
+Analyze the current portfolio status. 
+1. Evaluate open positions (PnL, Risk, Size).
+2. Check available USDT liquidity.
+3. Identify if any existing positions are in immediate danger or should be closed.
+
+Output ONLY a JSON object:
+{
+  "audit_findings": "Summary of current portfolio health and immediate needs",
+  "recommended_adjustments": ["Asset names to close or reduce", "..."]
+}
+`;
+        const auditRes = await makeClaudeRequest("You are a Senior Portfolio Risk Manager.", auditPrompt, 0.2);
+        const auditContent = auditRes.content[0].text;
+        let auditData;
+        try { auditData = extractJSON(auditContent); }
+        catch (e) { auditData = { audit_findings: "Could not perform detailed audit, proceeding with caution.", recommended_adjustments: [] }; }
+
+        // --- PHASE 2: Research Planning ---
+        console.log(`[Analyst] Phase 2: Planning Market Research...`);
+        const planPrompt = `
+Today is ${today}. 
+USER GOAL: "${userQuery}"
+PORTFOLIO AUDIT: "${auditData.audit_findings}"
+
+Based on the audit and the goal, generate a research plan with 2 targeted, high-intent search queries for Tavily.
+DO NOT use the user goal itself as a search query. 
+Focus on finding data for assets mentioned in the audit or new opportunities aligned with the goal.
+
+Output ONLY a JSON object:
+{
+  "steps": [
+    {
+      "action": "market_search",
+      "description": "Short reasoning",
+      "searchQuery": "Optimized search string"
+    }
+  ]
+}
+`;
+        const planRes = await makeClaudeRequest("You are a Lead Financial Researcher.", planPrompt, 0.2);
+        const planContent = planRes.content[0].text;
         let planData;
         try { planData = extractJSON(planContent); }
-        catch (e) { planData = { steps: [{ action: 'market_search', searchQuery: userQuery }] }; }
-
-        // 2. Execute Steps
-        const stepResults = [];
-        for (const step of (planData.steps || []).slice(0, 2)) {
-            console.log(`[Analyst] Step: ${step.description}`);
-            const data = await searchMarketData(step.searchQuery || userQuery);
-            stepResults.push({ step: step.description, data });
+        catch (e) {
+            planData = {
+                steps: [
+                    { action: 'market_search', description: 'Technical analysis', searchQuery: `${userQuery} 2026 technical analysis` },
+                    { action: 'market_search', description: 'Macro news', searchQuery: `crypto macro news 2026` }
+                ]
+            };
         }
 
-        // 3. Synthesis
+        // --- PHASE 3: Execution of Research ---
+        const stepResults = [];
+        const steps = (planData.steps || []).slice(0, 2);
+        for (const step of steps) {
+            const queryToUse = step.searchQuery || userQuery;
+            console.log(`[Analyst] Executing Research Step: ${step.description}`);
+            const data = await searchMarketData(queryToUse);
+            stepResults.push({ step: step.description, query: queryToUse, data });
+        }
+
+        // --- PHASE 4: Final Synthesis ---
         const usdt = context.userBalances?.find(b => b.asset === 'USDT')?.free || 200;
         const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
         const budget = Math.max(15, totalEquity * 0.1);
 
-        const systemPrompt = `InvestAI Core (2026). Budget: $${budget.toFixed(2)}. Be extremely concise. End with JSON in \`\`\`json\`\`\`.`;
+        const systemPrompt = `InvestAI Synthesis Core (2026). Budget: $${budget.toFixed(2)}. Be extremely concise and logical. End with JSON in \`\`\`json\`\`\`.`;
         const synthesisPrompt = `
-            Goal: ${userQuery}
-            Research: ${JSON.stringify(stepResults).substring(0, 4000)}
-            Portfolio: ${JSON.stringify(context)}
-            Verdict & JSON Block:
-            \`\`\`json
-            {"type": "analysis_result", "data": {"text": "...", "recommendations": [{"action": "BUY_NEW", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": 0, "suggested_quantity": 0}]}}
-            \`\`\`
-        `;
+Goal: ${userQuery}
+Audit Findings: ${auditData.audit_findings}
+Adjustments Needed: ${JSON.stringify(auditData.recommended_adjustments)}
+Market Research: ${JSON.stringify(stepResults).substring(0, 4000)}
+Portfolio: ${JSON.stringify(context)}
+
+Verdict & JSON Block:
+\`\`\`json
+{"type": "analysis_result", "data": {"text": "A narrative explainining Phase 1 audit and Phase 2 research results", "recommendations": [{"action": "AL/SAT/KAPAT", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": 0, "suggested_quantity": 0}]}}
+\`\`\`
+`;
 
         const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4);
         const finalText = finalRes.content[0].text;
@@ -169,12 +224,30 @@ app.post('/', async (req, res) => {
         // 4. Validate Recommendations
         const tradeRecommendations = [];
         for (const r of (rawData.data?.recommendations || [])) {
-            if (r.action === 'HOLD') continue;
+            const rawAction = (r.action || '').toUpperCase();
+            if (rawAction === 'HOLD' || rawAction === 'STAY') continue;
+
+            // Normalize Action Mapping
+            let normalizedAction = 'HOLD';
+            if (rawAction.includes('BUY') || rawAction.includes('LONG') || rawAction.includes('AL')) {
+                normalizedAction = 'BUY';
+            } else if (rawAction.includes('SELL') || rawAction.includes('SHORT') || rawAction.includes('SAT')) {
+                normalizedAction = 'SELL';
+            } else if (rawAction.includes('CLOSE') || rawAction.includes('EXIT') || rawAction.includes('KAPAT')) {
+                normalizedAction = 'CLOSE';
+            }
+
+            if (normalizedAction === 'HOLD') {
+                console.log(`[Analyst] Skipping non-trade action: ${rawAction} for ${r.asset}`);
+                continue;
+            }
+
             const livePrice = await getBinancePrice(r.asset);
             if (livePrice) {
                 tradeRecommendations.push({
                     symbol: r.asset,
-                    action: r.action,
+                    action: normalizedAction, // Normalized string
+                    originalAction: rawAction, // Keep for debugging
                     quantity: parseFloat((budget / livePrice).toFixed(4)),
                     reason: r.reasoning_summary,
                     confidence: 0.9,
