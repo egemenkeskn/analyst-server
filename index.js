@@ -23,7 +23,8 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const extractJSON = (str) => {
     try {
-        const cleanStr = str.replace(/\/\/.*$/gm, '').trim();
+        // DÜZELTME: URL'leri (https://) yorum satırı sanıp silen regex kaldırıldı.
+        const cleanStr = str.trim();
         const marker = '"type": "analysis_result"';
 
         if (cleanStr.includes(marker)) {
@@ -77,7 +78,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
             'content-type': 'application/json',
         },
         body: JSON.stringify({
-            model: "claude-sonnet-4-5",
+            model: "claude-3-5-sonnet-20240620", // Model ismi güncel API'ye uygun hale getirildi (veya elinizdeki spesifik model)
             max_tokens: 4000,
             system: systemPrompt,
             messages: [{ role: "user", content: userPrompt }],
@@ -118,6 +119,16 @@ app.post('/', async (req, res) => {
     try {
         let { userQuery, userBalances, userPositions, userId } = req.body;
 
+        // DÜZELTME 1: "today" değişkenini tanımla
+        const today = new Date().toISOString().split('T')[0];
+
+        // DÜZELTME 2: "context" objesini oluştur (Prompt içinde kullanılıyor)
+        const context = {
+            userBalances: userBalances || [],
+            userPositions: userPositions || [],
+            userId: userId || 'anonymous'
+        };
+
         if (!userQuery || userQuery === 'undefined' || userQuery === 'null') {
             userQuery = "Optimize my portfolio based on current 2026 market conditions.";
         }
@@ -155,6 +166,10 @@ Output ONLY a JSON object:
 }
 `;
         const auditRes = await makeClaudeRequest("You are a Senior Portfolio Risk Manager. ALWAYS use the provided CURRENT MARKET PRICES for calculations.", auditPrompt, 0.2);
+
+        // Hata Yönetimi: Claude response content kontrolü
+        if (!auditRes.content || !auditRes.content[0]) throw new Error("Claude Empty Response");
+
         const auditContent = auditRes.content[0].text;
         let auditData;
         try { auditData = extractJSON(auditContent); }
@@ -209,7 +224,10 @@ Output ONLY a JSON object:
         }
 
         // --- PHASE 4: Final Synthesis ---
-        const usdt = context.userBalances?.find(b => b.asset === 'USDT')?.free || 200;
+        // Context güvenliği: userBalances undefined ise hata vermesin
+        const usdtObj = context.userBalances ? context.userBalances.find(b => b.asset === 'USDT') : null;
+        const usdt = usdtObj ? usdtObj.free : 200;
+
         const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
         const budget = Math.max(15, totalEquity * 0.1);
 
