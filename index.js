@@ -77,14 +77,16 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
 
 async function searchMarketData(query) {
     try {
+        console.log(`[Tavily API] Deep Search: ${query}...`);
         const response = await fetch(TAVILY_API_URL, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 api_key: TAVILY_API_KEY,
                 query: query,
-                search_depth: "basic",
-                max_results: 5
+                search_depth: "advanced", // Switched to advanced for maximum depth
+                max_results: 10, // Increased from 5 to 10
+                include_answer: true
             }),
         });
         return await response.json();
@@ -111,41 +113,75 @@ async function getUserBinanceContext(userId) {
 app.post('/', async (req, res) => {
     try {
         const { userQuery, userBalances, userPositions, userId } = req.body;
-        console.log(`[Analyst] New Request: ${userQuery}`);
+        console.log(`[Analyst] New Deep Analysis Request: ${userQuery}`);
 
         let context = { userBalances: userBalances || [], userPositions: userPositions || [] };
 
-        // 1. Research Plan
+        // 1. Multi-Step Research Plan
         const today = new Date().toISOString().split('T')[0];
-        const planPrompt = `Today: ${today} (2026). Create a 1-step research plan for: "${userQuery}". Output JSON ONLY.`;
-        const planRes = await makeClaudeRequest("You are a research planner.", planPrompt);
+        const planPrompt = `
+            Today's Date: ${today} (Year 2026)
+            User Query: "${userQuery}"
+            Portfolio Stats: ${context.userBalances?.length} assets, ${context.userPositions?.length} active positions.
+            
+            Design a COMPREHENSIVE multi-step research plan (2-3 steps).
+            Step 1 should be broad market context.
+            Step 2-3 should be deep dives into specific assets or technical indicators.
+            
+            Output ONLY valid JSON:
+            {
+              "asset": "primary_asset",
+              "steps": [
+                { "action": "market_search", "description": "...", "searchQuery": "..." }
+              ]
+            }
+        `;
+        const planRes = await makeClaudeRequest("You are a Lead Financial Researcher. Design a deep investigation plan.", planPrompt);
         const planContent = planRes.content[0].text;
 
         let planData;
         try { planData = extractJSON(planContent); }
         catch (e) { planData = { steps: [{ action: 'market_search', searchQuery: userQuery }] }; }
 
-        // 2. Execute Search
+        // 2. Execute All Steps (No time limit)
         const stepResults = [];
-        for (const step of (planData.steps || []).slice(0, 1)) {
+        for (const step of (planData.steps || []).slice(0, 3)) {
+            console.log(`[Analyst] Executing Deep Step: ${step.description}`);
             const data = await searchMarketData(step.searchQuery || userQuery);
-            stepResults.push({ success: true, data });
+            stepResults.push({ step: step.description, data });
         }
 
-        // 3. Synthesis
+        // 3. Maximum Capacity Synthesis
         const usdt = context.userBalances?.find(b => b.asset === 'USDT')?.free || 200;
-        const budget = Math.max(15, parseFloat(usdt) * 0.1);
+        const totalEquity = context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) + parseFloat(usdt);
+        const budget = Math.max(15, totalEquity * 0.1);
 
-        const systemPrompt = `You are InvestAI Core Intelligence. Today is ${today} (2026). Max budget: $${budget}. Use Binance symbols ending in USDT. Output analysis narrartive + JSON at end.`;
-        const synthesisPrompt = `
-            Query: ${userQuery}
-            Market Data: ${JSON.stringify(stepResults)}
-            Portfolio: ${JSON.stringify(context)}
-            Respond with analysis text followed by JSON:
-            {"type": "analysis_result", "data": {"text": "...", "recommendations": [{"action": "BUY", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": 0, "suggested_quantity": 0}]}}
+        const systemPrompt = `
+            You are InvestAI Core Intelligence, running on high-capacity infrastructure.
+            - DATE: ${today} (Year 2026).
+            - MISSION: Perform exhaustive institutional-grade analysis.
+            - PROTOCOL: Cross-reference research data with portfolio status.
+            - BUDGET: $${budget.toFixed(2)} per trade.
+            - OUTPUT: Detailed professional narrative followed by precise JSON.
+            - QUALITY: Do not rush. Provide deep reasoning for macro trends and specific asset movements.
         `;
 
-        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt);
+        const synthesisPrompt = `
+            Final Investigation Report Request:
+            User Goal: ${userQuery}
+            Research Findings: ${JSON.stringify(stepResults)}
+            Portfolio Context: ${JSON.stringify(context)}
+            
+            Based on the 2026 market reality found in research, provide your final verdict.
+            If recommending trades, ensure they are high-conviction.
+            
+            Respond with:
+            1. Extensive Narrative Analysis
+            2. JSON Block:
+            {"type": "analysis_result", "data": {"text": "...", "recommendations": [{"action": "BUY_NEW", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": number, "suggested_quantity": number}]}}
+        `;
+
+        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4); // Slightly higher temp for more nuanced analysis
         const finalText = finalRes.content[0].text;
         const rawData = extractJSON(finalText);
 
