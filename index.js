@@ -23,24 +23,34 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const extractJSON = (str) => {
     try {
-        // 1. Try to find a JSON block between backticks (matches ```json ... ``` or just ``` ... ```)
-        const match = str.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (match && match[1]) return JSON.parse(match[1].replace(/\/\/.*$/gm, ''));
+        const cleanStr = str.replace(/\/\/.*$/gm, '').trim();
+        const marker = '"type": "analysis_result"';
 
-        // 2. If not found, look for the first '{' and the last '}'
-        const firstOpen = str.indexOf('{');
-        const lastClose = str.lastIndexOf('}');
-        if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
-            const candidate = str.substring(firstOpen, lastClose + 1);
-            return JSON.parse(candidate.replace(/\/\/.*$/gm, ''));
+        if (cleanStr.includes(marker)) {
+            const start = cleanStr.lastIndexOf('{', cleanStr.indexOf(marker));
+            let balance = 0;
+            for (let i = start; i < cleanStr.length; i++) {
+                if (cleanStr[i] === '{') balance++;
+                if (cleanStr[i] === '}') balance--;
+                if (balance === 0) {
+                    return JSON.parse(cleanStr.substring(start, i + 1));
+                }
+            }
         }
 
-        // 3. Final attempt: Parse the whole string
-        return JSON.parse(str.replace(/\/\/.*$/gm, ''));
+        const match = cleanStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (match && match[1]) return JSON.parse(match[1]);
+
+        const firstOpen = cleanStr.indexOf('{');
+        const lastClose = cleanStr.lastIndexOf('}');
+        if (firstOpen !== -1 && lastClose !== -1) {
+            return JSON.parse(cleanStr.substring(firstOpen, lastClose + 1));
+        }
+
+        throw new Error("No JSON found");
     } catch (e) {
-        console.error(`[Parser Error] Extraction failed. Raw Input Length: ${str.length}`);
-        console.error(`[Parser Error] Raw Input Start: ${str.substring(0, 500)}`);
-        throw new Error(`JSON Extraction failed: ${e.message}. Check server logs for full response.`);
+        console.error(`[Parser Error] Length: ${str.length}. Preview: ${str.substring(0, 200)}`);
+        throw new Error(`JSON Extraction failed: ${e.message}`);
     }
 };
 
@@ -68,7 +78,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
         },
         body: JSON.stringify({
             model: "claude-sonnet-4-5",
-            max_tokens: 4096,
+            max_tokens: 4000,
             system: systemPrompt,
             messages: [{ role: "user", content: userPrompt }],
             temperature,
@@ -91,8 +101,8 @@ async function searchMarketData(query) {
             body: JSON.stringify({
                 api_key: TAVILY_API_KEY,
                 query: query,
-                search_depth: "advanced", // Switched to advanced for maximum depth
-                max_results: 10, // Increased from 5 to 10
+                search_depth: "advanced",
+                max_results: 5,
                 include_answer: true
             }),
         });
@@ -102,100 +112,61 @@ async function searchMarketData(query) {
     }
 }
 
-// --- Logic from Shared Binance ---
-async function getUserBinanceContext(userId) {
-    const { data: userKeys } = await supabaseAdmin
-        .from('user_settings')
-        .select('binance_api_key, binance_api_secret')
-        .eq('user_id', userId)
-        .single();
-
-    // Note: In an ideal world, we'd fetch actual balance here. 
-    // For now, we'll return empty or default and rely on payload.
-    return { balances: [], positions: [] };
-}
-
 // --- Main Analyst Bot Logic ---
 
 app.post('/', async (req, res) => {
     try {
-        const { userQuery, userBalances, userPositions, userId } = req.body;
-        console.log(`[Analyst] New Deep Analysis Request: ${userQuery}`);
+        let { userQuery, userBalances, userPositions, userId } = req.body;
+
+        if (!userQuery || userQuery === 'undefined' || userQuery === 'null') {
+            userQuery = "Optimize my portfolio based on current 2026 market conditions.";
+        }
+
+        console.log(`[Analyst] Processing Goal: ${userQuery}`);
 
         let context = { userBalances: userBalances || [], userPositions: userPositions || [] };
-
-        // 1. Multi-Step Research Plan
         const today = new Date().toISOString().split('T')[0];
-        const planPrompt = `
-            Today's Date: ${today} (Year 2026)
-            User Query: "${userQuery}"
-            Portfolio Stats: ${context.userBalances?.length} assets, ${context.userPositions?.length} active positions.
-            
-            Design a COMPREHENSIVE multi-step research plan (2-3 steps).
-            Step 1 should be broad market context.
-            Step 2-3 should be deep dives into specific assets or technical indicators.
-            
-            CRITICAL: Output ONLY valid JSON inside a \`\`\`json\`\`\` block at the end.
-            {
-              "asset": "primary_asset",
-              "steps": [
-                { "action": "market_search", "description": "...", "searchQuery": "..." }
-              ]
-            }
-        `;
-        const planRes = await makeClaudeRequest("You are a Lead Financial Researcher. Design a deep investigation plan.", planPrompt);
+
+        // 1. Research Plan
+        const planPrompt = `Today: ${today} (2026). Goal: "${userQuery}". Output ONLY JSON: {"steps": [{"action": "market_search", "description": "...", "searchQuery": "..."}]}`;
+        const planRes = await makeClaudeRequest("You are a Lead Financial Researcher.", planPrompt);
         const planContent = planRes.content[0].text;
 
         let planData;
         try { planData = extractJSON(planContent); }
         catch (e) { planData = { steps: [{ action: 'market_search', searchQuery: userQuery }] }; }
 
-        // 2. Execute All Steps (No time limit)
+        // 2. Execute Steps
         const stepResults = [];
-        for (const step of (planData.steps || []).slice(0, 3)) {
-            console.log(`[Analyst] Executing Deep Step: ${step.description} `);
+        for (const step of (planData.steps || []).slice(0, 2)) {
+            console.log(`[Analyst] Step: ${step.description}`);
             const data = await searchMarketData(step.searchQuery || userQuery);
             stepResults.push({ step: step.description, data });
         }
 
-        // 3. Maximum Capacity Synthesis
+        // 3. Synthesis
         const usdt = context.userBalances?.find(b => b.asset === 'USDT')?.free || 200;
-        const totalEquity = context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) + parseFloat(usdt);
+        const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
         const budget = Math.max(15, totalEquity * 0.1);
 
-        const systemPrompt = `
-            You are InvestAI Core Intelligence, running on high - capacity infrastructure.
-            - DATE: ${today} (Year 2026).
-            - MISSION: Perform exhaustive institutional - grade analysis.
-            - PROTOCOL: You MUST provide a valid JSON block inside \`\`\`json\`\`\` at the end of your response.
-            - BUDGET: $${budget.toFixed(2)} per trade.
-            - QUALITY: Do not rush. Provide deep reasoning for macro trends and specific asset movements.
-        `;
-
+        const systemPrompt = `InvestAI Core (2026). Budget: $${budget.toFixed(2)}. Be extremely concise. End with JSON in \`\`\`json\`\`\`.`;
         const synthesisPrompt = `
-            Final Investigation Report Request:
-            User Goal: ${userQuery}
-            Research Findings: ${JSON.stringify(stepResults)}
-            Portfolio Context: ${JSON.stringify(context)}
-            
-            Based on the 2026 market reality found in research, provide your final verdict.
-            If recommending trades, ensure they are high-conviction.
-            
-            Respond with:
-            1. Extensive Narrative Analysis
-            2. JSON Block:
+            Goal: ${userQuery}
+            Research: ${JSON.stringify(stepResults).substring(0, 4000)}
+            Portfolio: ${JSON.stringify(context)}
+            Verdict & JSON Block:
             \`\`\`json
             {"type": "analysis_result", "data": {"text": "...", "recommendations": [{"action": "BUY_NEW", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": 0, "suggested_quantity": 0}]}}
             \`\`\`
         `;
 
-        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4); // Slightly higher temp for more nuanced analysis
+        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4);
         const finalText = finalRes.content[0].text;
-        console.log(`[Analyst] Raw Synthesis Response Length: ${finalText.length}`);
+        console.log(`[Analyst] Response Length: ${finalText.length}`);
 
         const rawData = extractJSON(finalText);
 
-        // 4. Validate & Format Recommendations (Ported logic)
+        // 4. Validate Recommendations
         const tradeRecommendations = [];
         for (const r of (rawData.data?.recommendations || [])) {
             if (r.action === 'HOLD') continue;
@@ -225,5 +196,5 @@ app.post('/', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Analyst Server running on port ${PORT}`);
+    console.log(`Analyst Server live on ${PORT}`);
 });
