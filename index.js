@@ -78,7 +78,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
             'content-type': 'application/json',
         },
         body: JSON.stringify({
-            model: "claude-3-5-sonnet-20240620", // Model ismi güncel API'ye uygun hale getirildi (veya elinizdeki spesifik model)
+            model: "claude-sonnet-4-5", // Model ismi güncel API'ye uygun hale getirildi (veya elinizdeki spesifik model)
             max_tokens: 4000,
             system: systemPrompt,
             messages: [{ role: "user", content: userPrompt }],
