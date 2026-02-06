@@ -23,17 +23,24 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const extractJSON = (str) => {
     try {
-        const match = str.match(/```json\s*([\s\S]*?)\s*```/);
+        // 1. Try to find a JSON block between backticks (matches ```json ... ``` or just ``` ... ```)
+        const match = str.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (match && match[1]) return JSON.parse(match[1].replace(/\/\/.*$/gm, ''));
+
+        // 2. If not found, look for the first '{' and the last '}'
         const firstOpen = str.indexOf('{');
         const lastClose = str.lastIndexOf('}');
         if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
             const candidate = str.substring(firstOpen, lastClose + 1);
             return JSON.parse(candidate.replace(/\/\/.*$/gm, ''));
         }
+
+        // 3. Final attempt: Parse the whole string
         return JSON.parse(str.replace(/\/\/.*$/gm, ''));
     } catch (e) {
-        throw new Error(`JSON Extraction failed: ${e.message}`);
+        console.error(`[Parser Error] Extraction failed. Raw Input Length: ${str.length}`);
+        console.error(`[Parser Error] Raw Input Start: ${str.substring(0, 500)}`);
+        throw new Error(`JSON Extraction failed: ${e.message}. Check server logs for full response.`);
     }
 };
 
@@ -128,7 +135,7 @@ app.post('/', async (req, res) => {
             Step 1 should be broad market context.
             Step 2-3 should be deep dives into specific assets or technical indicators.
             
-            Output ONLY valid JSON:
+            CRITICAL: Output ONLY valid JSON inside a \`\`\`json\`\`\` block at the end.
             {
               "asset": "primary_asset",
               "steps": [
@@ -146,7 +153,7 @@ app.post('/', async (req, res) => {
         // 2. Execute All Steps (No time limit)
         const stepResults = [];
         for (const step of (planData.steps || []).slice(0, 3)) {
-            console.log(`[Analyst] Executing Deep Step: ${step.description}`);
+            console.log(`[Analyst] Executing Deep Step: ${step.description} `);
             const data = await searchMarketData(step.searchQuery || userQuery);
             stepResults.push({ step: step.description, data });
         }
@@ -157,12 +164,11 @@ app.post('/', async (req, res) => {
         const budget = Math.max(15, totalEquity * 0.1);
 
         const systemPrompt = `
-            You are InvestAI Core Intelligence, running on high-capacity infrastructure.
+            You are InvestAI Core Intelligence, running on high - capacity infrastructure.
             - DATE: ${today} (Year 2026).
-            - MISSION: Perform exhaustive institutional-grade analysis.
-            - PROTOCOL: Cross-reference research data with portfolio status.
+            - MISSION: Perform exhaustive institutional - grade analysis.
+            - PROTOCOL: You MUST provide a valid JSON block inside \`\`\`json\`\`\` at the end of your response.
             - BUDGET: $${budget.toFixed(2)} per trade.
-            - OUTPUT: Detailed professional narrative followed by precise JSON.
             - QUALITY: Do not rush. Provide deep reasoning for macro trends and specific asset movements.
         `;
 
@@ -178,11 +184,15 @@ app.post('/', async (req, res) => {
             Respond with:
             1. Extensive Narrative Analysis
             2. JSON Block:
-            {"type": "analysis_result", "data": {"text": "...", "recommendations": [{"action": "BUY_NEW", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": number, "suggested_quantity": number}]}}
+            \`\`\`json
+            {"type": "analysis_result", "data": {"text": "...", "recommendations": [{"action": "BUY_NEW", "asset": "BTCUSDT", "risk_level": "LOW", "reasoning_summary": "...", "suggested_price": 0, "suggested_quantity": 0}]}}
+            \`\`\`
         `;
 
         const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4); // Slightly higher temp for more nuanced analysis
         const finalText = finalRes.content[0].text;
+        console.log(`[Analyst] Raw Synthesis Response Length: ${finalText.length}`);
+
         const rawData = extractJSON(finalText);
 
         // 4. Validate & Format Recommendations (Ported logic)
