@@ -84,6 +84,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
             messages: [{ role: "user", content: userPrompt }],
             temperature,
         }),
+        signal: AbortSignal.timeout(120000) // 120 sn timeout
     });
 
     if (!response.ok) {
