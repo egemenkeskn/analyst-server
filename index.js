@@ -171,13 +171,13 @@ Analyze the current portfolio status using the verified MARKET PRICES above.
 2. Check available USDT liquidity.
 3. Identify if any existing positions are in immediate danger or should be closed.
 
-Output ONLY a JSON object:
+Output ONLY a JSON object IN TURKISH:
 {
-  "audit_findings": "Summary of current portfolio health and immediate needs",
-  "recommended_adjustments": ["Asset names to close or reduce", "..."]
+  "audit_findings": "Portföyün genel durumu, kâr/zarar analizi ve acil ihtiyaçların özeti (Türkçe)",
+  "recommended_adjustments": ["Kapatılması veya azaltılması gereken varlıklar", "..."]
 }
 `;
-        const auditRes = await makeClaudeRequest("You are a Senior Portfolio Risk Manager. ALWAYS use the provided CURRENT MARKET PRICES for calculations.", auditPrompt, 0.2);
+        const auditRes = await makeClaudeRequest("Sen Deneyimli bir Portföy Risk Yöneticisisin. Hesaplamalar için HER ZAMAN sağlanan GÜNCEL PİYASA FİYATLARINI (CURRENT MARKET PRICES) kullan. Tüm açıklamaların TÜRKÇE olsun.", auditPrompt, 0.2);
 
         // Hata Yönetimi: Claude response content kontrolü
         if (!auditRes.content || !auditRes.content[0]) throw new Error("Claude Empty Response");
@@ -201,18 +201,18 @@ Focus on finding data for:
 1. Crypto price action and technical trends.
 2. Precious Metals (Gold/Silver) trends or Macro/Commodity catalysts.
 
-Output ONLY a JSON object:
+Output ONLY a JSON object IN TURKISH:
 {
   "steps": [
     {
       "action": "market_search",
-      "description": "Short reasoning",
-      "searchQuery": "Optimized search string"
+      "description": "Kısa gerekçe (Türkçe)",
+      "searchQuery": "Optimize edilmiş arama sorgusu"
     }
   ]
 }
 `;
-        const planRes = await makeClaudeRequest("You are a Lead Financial Researcher.", planPrompt, 0.2);
+        const planRes = await makeClaudeRequest("Sen Baş Kıdemli Finansal Araştırmacısın. Tüm araştırma adımlarını TÜRKÇE planla.", planPrompt, 0.2);
         const planContent = planRes.content[0].text;
         let planData;
         try { planData = extractJSON(planContent); }
@@ -283,7 +283,7 @@ Output ONLY a JSON object:
         const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
         const budget = Math.max(15, totalEquity * 0.1);
 
-        const systemPrompt = `InvestAI Synthesis Core (2026). Budget: $${budget.toFixed(2)}. Current Prices: ${priceContext}. Be extremely concise and logical. End with JSON in \`\`\`json\`\`\`.`;
+        const systemPrompt = `InvestAI Sentez Merkezi (2026). Bütçe: $${budget.toFixed(2)}. Güncel Fiyatlar: ${priceContext}. Son derece öz, mantıklı ve TÜRKÇE konuş. Yanıtını \`\`\`json\`\`\` bloğuyla bitir.`;
         const synthesisPrompt = `
 Goal: ${userQuery}
 Verified Prices: ${priceContext}
@@ -297,16 +297,16 @@ Verdict & JSON Block:
 {
   "type": "analysis_result", 
   "data": {
-    "text": "A narrative explainining Phase 1 audit and Phase 2 research results. Explicitly mention current price context to reassure the user.", 
+    "text": "Faz 1 denetimini ve Faz 2 araştırma sonuçlarını açıklayan akıcı bir anlatım. Kullanıcıyı rahatlatmak için mevcut fiyat bağlamından açıkça bahsedin. TÜRKÇE yazın.", 
     "recommendations": [
       {
         "action": "AL/SAT/KAPAT", 
         "asset": "BTCUSDT", 
-        "leverage": 1, // Integer between 1-20. Default 1 (Spot-like). Use higher leverage ONLY for very high confidence setups.
-        "stop_loss": 0, // REALISTIC Stop Loss price. Max 2-5% risk from entry.
-        "take_profit": 0, // REALISTIC Take Profit price. Aim for 1:2 or 1:3 Risk/Reward. Do NOT set moon-bag targets (e.g. +50% is too high for a single trade).
+        "leverage": 1, 
+        "stop_loss": 0, 
+        "take_profit": 0, 
         "risk_level": "LOW", 
-        "reasoning_summary": "...", 
+        "reasoning_summary": "Bu işlem için TÜRKÇE kısa gerekçe.", 
         "suggested_price": 0, 
         "suggested_quantity": 0
       }
@@ -314,9 +314,10 @@ Verdict & JSON Block:
   }
 }
 \`\`\`
-Note: "suggested_quantity" can be 0 if you want the system to use the default safety budget.
-CRITICAL: Calculate TP and SL based on the "Current Prices" provided in context. Do not hallucinate prices.
-For CLOSE actions, leverage/SL/TP are ignored.
+Not: "suggested_quantity", sistemin varsayılan güvenlik bütçesini kullanmasını istiyorsanız 0 olabilir.
+KRİTİK: TP ve SL değerlerini bağlamda sağlanan "Güncel Fiyatlar" (Current Prices) üzerinden hesaplayın. Fiyat uydurmayın.
+CLOSE (KAPAT) işlemleri için kaldıraç/SL/TP dikkate alınmaz.
+TÜM METİNLER TÜRKÇE OLMALIDIR.
 `;
 
         const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4);
