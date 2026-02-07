@@ -303,8 +303,8 @@ Verdict & JSON Block:
         "action": "AL/SAT/KAPAT", 
         "asset": "BTCUSDT", 
         "leverage": 1, // Integer between 1-20. Default 1 (Spot-like). Use higher leverage ONLY for very high confidence setups.
-        "stop_loss": 0, // Price to exit if trade goes wrong
-        "take_profit": 0, // Price to exit if trade goes right
+        "stop_loss": 0, // REALISTIC Stop Loss price. Max 2-5% risk from entry.
+        "take_profit": 0, // REALISTIC Take Profit price. Aim for 1:2 or 1:3 Risk/Reward. Do NOT set moon-bag targets (e.g. +50% is too high for a single trade).
         "risk_level": "LOW", 
         "reasoning_summary": "...", 
         "suggested_price": 0, 
@@ -314,7 +314,8 @@ Verdict & JSON Block:
   }
 }
 \`\`\`
-Note: "suggested_quantity" can be 0 if you want the system to use the default safety budget, or a specific number to override it (e.g. for flipping a position).
+Note: "suggested_quantity" can be 0 if you want the system to use the default safety budget.
+CRITICAL: Calculate TP and SL based on the "Current Prices" provided in context. Do not hallucinate prices.
 For CLOSE actions, leverage/SL/TP are ignored.
 `;
 
