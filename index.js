@@ -351,6 +351,8 @@ TÜM METİNLER TÜRKÇE OLMALIDIR.
                 normalizedAction = 'SELL';
             } else if (rawAction.includes('CLOSE') || rawAction.includes('EXIT') || rawAction.includes('KAPAT')) {
                 normalizedAction = 'CLOSE';
+            } else if (rawAction.includes('UPDATE') || rawAction.includes('GÜNCELLE') || rawAction.includes('MODIFY')) {
+                normalizedAction = 'UPDATE';
             }
 
             if (normalizedAction === 'HOLD') {
@@ -361,9 +363,9 @@ TÜM METİNLER TÜRKÇE OLMALIDIR.
             const livePrice = await getBinancePrice(r.asset);
             if (livePrice) {
                 // If AI suggested a specific quantity, use it. Otherwise calculate based on budget.
-                const finalQuantity = r.suggested_quantity > 0
+                const finalQuantity = normalizedAction === 'UPDATE' ? 0 : (r.suggested_quantity > 0
                     ? parseFloat(r.suggested_quantity)
-                    : parseFloat((budget / livePrice).toFixed(4));
+                    : parseFloat((budget / livePrice).toFixed(4)));
 
                 tradeRecommendations.push({
                     symbol: r.asset,
