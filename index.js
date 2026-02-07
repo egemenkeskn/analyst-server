@@ -135,16 +135,28 @@ app.post('/', async (req, res) => {
 
         console.log(`[Analyst] Processing Goal: ${userQuery}`);
 
-        // --- PHASE 0: Price Injection ---
-        console.log(`[Analyst] Phase 0: Fetching Real-Time Prices...`);
-        const assetsToHalt = ['BTCUSDT', 'ETHUSDT', 'PAXGUSDT'];
+        // --- PHASE 0: Context Aware Price Injection ---
+        console.log(`[Analyst] Phase 0: Fetching Real-Time Prices for Context...`);
+
+        // 1. Start with Benchmarks
+        const trackedAssets = new Set(['BTCUSDT', 'ETHUSDT']);
+
+        // 2. Add User's Current Holdings
+        if (context.userPositions && context.userPositions.length > 0) {
+            context.userPositions.forEach(p => {
+                if (p.symbol) trackedAssets.add(p.symbol);
+            });
+        }
+
         const priceMap = {};
-        for (const sym of assetsToHalt) {
+        for (const sym of trackedAssets) {
             const p = await getBinancePrice(sym);
             if (p) priceMap[sym] = p;
         }
-        const priceContext = Object.entries(priceMap).map(([s, p]) => `${s}: $${p}`).join(', ');
-        console.log(`[Analyst] Injected Price Context: ${priceContext}`);
+
+        // Initial Context String
+        let priceContext = Object.entries(priceMap).map(([s, p]) => `${s}: $${p}`).join(', ');
+        console.log(`[Analyst] Initial Price Context: ${priceContext}`);
 
         // --- PHASE 1: Portfolio Audit ---
         console.log(`[Analyst] Phase 1: Auditing Portfolio...`);
@@ -222,6 +234,46 @@ Output ONLY a JSON object:
             const data = await searchMarketData(queryToUse);
             stepResults.push({ step: step.description, query: queryToUse, data });
         }
+
+        // --- PHASE 3.5: Dynamic Price Discovery (NEW) ---
+        console.log(`[Analyst] Phase 3.5: Identifying Interest Assets & Fetching Prices...`);
+        // Ask LLM which assets are relevant based on research
+        const tickerPrompt = `
+Based on the User Goal and the Market Research data below, list up to 5 ticker symbols (e.g. BTCUSDT, SOLUSDT, PAXGUSDT) that are relevant candidates for trading or analysis.
+Start with the obvious ones mentioned in the research.
+Research Data: ${JSON.stringify(stepResults).substring(0, 3000)}
+
+Output ONLY a JSON object:
+{
+  "candidate_tickers": ["BTCUSDT", "ETHUSDT", ...]
+}
+`;
+        let newCandidates = [];
+        try {
+            const tickerRes = await makeClaudeRequest("You are a data extractor. Output JSON only.", tickerPrompt, 0.1);
+            const tickerData = extractJSON(tickerRes.content[0].text);
+            newCandidates = tickerData.candidate_tickers || [];
+        } catch (e) {
+            console.warn(`[Analyst] Failed to extract tickers: ${e.message}`);
+        }
+
+        // Fetch prices for new candidates if we don't have them
+        let newPricesAdded = 0;
+        for (const sym of newCandidates) {
+            const cleanSym = sym.toUpperCase().trim();
+            if (!priceMap[cleanSym]) {
+                const p = await getBinancePrice(cleanSym);
+                if (p) {
+                    priceMap[cleanSym] = p;
+                    newPricesAdded++;
+                }
+            }
+        }
+
+        // Re-generate price context string with ALL known prices
+        priceContext = Object.entries(priceMap).map(([s, p]) => `${s}: $${p}`).join(', ');
+        console.log(`[Analyst] Updated Price Context (+${newPricesAdded} new): ${priceContext}`);
+
 
         // --- PHASE 4: Final Synthesis ---
         // Context güvenliği: userBalances undefined ise hata vermesin
