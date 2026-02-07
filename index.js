@@ -232,7 +232,18 @@ Output ONLY a JSON object IN TURKISH:
             const queryToUse = step.searchQuery || userQuery;
             console.log(`[Analyst] Executing Research Step: ${step.description}`);
             const data = await searchMarketData(queryToUse);
-            stepResults.push({ step: step.description, query: queryToUse, data });
+
+            // Optimization: Filter Tavily results to save tokens and improve context quality
+            const cleanData = {
+                results: (data.results || []).map(r => ({
+                    title: r.title,
+                    url: r.url,
+                    content: r.content, // Summary/Snippet
+                    published_date: r.published_date
+                }))
+            };
+
+            stepResults.push({ step: step.description, query: queryToUse, data: cleanData });
         }
 
         // --- PHASE 3.5: Dynamic Price Discovery (NEW) ---
@@ -241,7 +252,7 @@ Output ONLY a JSON object IN TURKISH:
         const tickerPrompt = `
 Based on the User Goal and the Market Research data below, list up to 5 ticker symbols (e.g. BTCUSDT, SOLUSDT, PAXGUSDT) that are relevant candidates for trading or analysis.
 Start with the obvious ones mentioned in the research.
-Research Data: ${JSON.stringify(stepResults).substring(0, 3000)}
+Research Data: ${JSON.stringify(stepResults).substring(0, 15000)}
 
 Output ONLY a JSON object:
 {
@@ -289,7 +300,7 @@ Goal: ${userQuery}
 Verified Prices: ${priceContext}
 Audit Findings: ${auditData.audit_findings}
 Adjustments Needed: ${JSON.stringify(auditData.recommended_adjustments)}
-Market Research: ${JSON.stringify(stepResults).substring(0, 4000)}
+Market Research: ${JSON.stringify(stepResults).substring(0, 25000)}
 Portfolio: ${JSON.stringify(context)}
 
 Verdict & JSON Block:
