@@ -290,9 +290,9 @@ Output ONLY a JSON object:
         // --- PHASE 4: Final Synthesis ---
         // Context güvenliği: userBalances undefined ise hata vermesin
         const usdtObj = context.userBalances ? context.userBalances.find(b => b.asset === 'USDT') : null;
-        const usdt = usdtObj ? usdtObj.free : 200;
+        const usdt = parseFloat(usdtObj ? usdtObj.free : 200);
 
-        const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
+        const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + usdt;
         const budget = Math.max(15, totalEquity * 0.1);
 
 
