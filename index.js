@@ -58,11 +58,11 @@ const extractJSON = (str) => {
     }
 };
 
-async function getBinancePrice(symbol) {
+async function getBinancePrice(symbol, signal) {
     try {
         const cleanSymbol = symbol.toUpperCase().replace(/[\/\s-]/g, '');
         const url = `https://fapi.binance.com/fapi/v1/ticker/price?symbol=${cleanSymbol}`;
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         if (!response.ok) return null;
         const data = await response.json();
         return data && data.price ? parseFloat(data.price) : null;
@@ -71,7 +71,7 @@ async function getBinancePrice(symbol) {
     }
 }
 
-async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
+async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1, signal) {
     console.log(`[Analyst] Calling Claude 4.5 Sonnet...`);
     const response = await fetch(ANTHROPIC_API_URL, {
         method: 'POST',
@@ -87,7 +87,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
             messages: [{ role: "user", content: userPrompt }],
             temperature,
         }),
-        signal: AbortSignal.timeout(120000) // 120 sn timeout
+        signal: signal || AbortSignal.timeout(120000) // User signal OR default timeout
     });
 
     if (!response.ok) {
@@ -97,7 +97,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1) {
     return await response.json();
 }
 
-async function searchMarketData(query) {
+async function searchMarketData(query, signal) {
     try {
         console.log(`[Tavily API] Deep Search: ${query}...`);
         const response = await fetch(TAVILY_API_URL, {
@@ -110,6 +110,7 @@ async function searchMarketData(query) {
                 max_results: 5,
                 include_answer: true
             }),
+            signal
         });
         return await response.json();
     } catch (err) {
@@ -123,6 +124,16 @@ app.post('/', async (req, res) => {
     // Set timeout for this specific request
     req.setTimeout(SERVER_TIMEOUT);
     res.setTimeout(SERVER_TIMEOUT);
+
+    // Create AbortController for this request
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    // Listen for client disconnect
+    req.on('close', () => {
+        console.log('[Analyst] Client disconnected, aborting operations...');
+        controller.abort();
+    });
 
     try {
         let { userQuery, userBalances, userPositions, userId } = req.body;
@@ -158,7 +169,8 @@ app.post('/', async (req, res) => {
 
         const priceMap = {};
         for (const sym of trackedAssets) {
-            const p = await getBinancePrice(sym);
+            if (signal.aborted) throw new Error('Aborted');
+            const p = await getBinancePrice(sym, signal);
             if (p) priceMap[sym] = p;
         }
 
@@ -185,7 +197,7 @@ Output ONLY a JSON object IN TURKISH:
   "recommended_adjustments": ["Kapatılması veya azaltılması gereken varlıklar", "..."]
 }
 `;
-        const auditRes = await makeClaudeRequest("Sen Deneyimli bir Portföy Risk Yöneticisisin. Hesaplamalar için HER ZAMAN sağlanan GÜNCEL PİYASA FİYATLARINI (CURRENT MARKET PRICES) kullan. Tüm açıklamaların TÜRKÇE olsun.", auditPrompt, 0.2);
+        const auditRes = await makeClaudeRequest("Sen Deneyimli bir Portföy Risk Yöneticisisin. Hesaplamalar için HER ZAMAN sağlanan GÜNCEL PİYASA FİYATLARINI (CURRENT MARKET PRICES) kullan. Tüm açıklamaların TÜRKÇE olsun.", auditPrompt, 0.2, signal);
 
         // Hata Yönetimi: Claude response content kontrolü
         if (!auditRes.content || !auditRes.content[0]) throw new Error("Claude Empty Response");
@@ -220,7 +232,7 @@ Output ONLY a JSON object IN TURKISH:
   ]
 }
 `;
-        const planRes = await makeClaudeRequest("Sen Baş Kıdemli Finansal Araştırmacısın. Tüm araştırma adımlarını TÜRKÇE planla.", planPrompt, 0.2);
+        const planRes = await makeClaudeRequest("Sen Baş Kıdemli Finansal Araştırmacısın. Tüm araştırma adımlarını TÜRKÇE planla.", planPrompt, 0.2, signal);
         const planContent = planRes.content[0].text;
         let planData;
         try { planData = extractJSON(planContent); }
@@ -237,9 +249,10 @@ Output ONLY a JSON object IN TURKISH:
         const stepResults = [];
         const steps = (planData.steps || []).slice(0, 2);
         for (const step of steps) {
+            if (signal.aborted) throw new Error('Aborted');
             const queryToUse = step.searchQuery || userQuery;
             console.log(`[Analyst] Executing Research Step: ${step.description}`);
-            const data = await searchMarketData(queryToUse);
+            const data = await searchMarketData(queryToUse, signal);
 
             // Optimization: Filter Tavily results to save tokens and improve context quality
             const cleanData = {
@@ -269,19 +282,21 @@ Output ONLY a JSON object:
 `;
         let newCandidates = [];
         try {
-            const tickerRes = await makeClaudeRequest("You are a data extractor. Output JSON only.", tickerPrompt, 0.1);
+            const tickerRes = await makeClaudeRequest("You are a data extractor. Output JSON only.", tickerPrompt, 0.1, signal);
             const tickerData = extractJSON(tickerRes.content[0].text);
             newCandidates = tickerData.candidate_tickers || [];
         } catch (e) {
+            if (e.name === 'AbortError' || signal.aborted) throw e;
             console.warn(`[Analyst] Failed to extract tickers: ${e.message}`);
         }
 
         // Fetch prices for new candidates if we don't have them
         let newPricesAdded = 0;
         for (const sym of newCandidates) {
+            if (signal.aborted) throw new Error('Aborted');
             const cleanSym = sym.toUpperCase().trim();
             if (!priceMap[cleanSym]) {
-                const p = await getBinancePrice(cleanSym);
+                const p = await getBinancePrice(cleanSym, signal);
                 if (p) {
                     priceMap[cleanSym] = p;
                     newPricesAdded++;
@@ -359,7 +374,7 @@ TÜM METİNLER TÜRKÇE OLMALIDIR.
 NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değerleri SADECE yeni açılan (AL/SAT) pozisyonlar için verilmelidir. Mevcut pozisyonlar için sadece "KAPAT" veya "BEKLE" kararı ver.
 `;
 
-        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4);
+        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4, signal);
         const finalText = finalRes.content[0].text;
         console.log(`[Analyst] Response Length: ${finalText.length}`);
 
@@ -370,6 +385,8 @@ NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değe
         for (const r of (rawData.data?.recommendations || [])) {
             const rawAction = (r.action || '').toUpperCase();
             if (rawAction === 'HOLD' || rawAction === 'STAY') continue;
+
+            if (signal.aborted) throw new Error('Aborted');
 
             // Normalize Action Mapping
             let normalizedAction = 'HOLD';
@@ -386,7 +403,7 @@ NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değe
                 continue;
             }
 
-            const livePrice = await getBinancePrice(r.asset);
+            const livePrice = await getBinancePrice(r.asset, signal); // Optional: check signal here too if needed
             if (livePrice) {
                 // If AI suggested a specific quantity, use it. Otherwise calculate based on budget.
                 const finalQuantity = r.suggested_quantity > 0
@@ -414,9 +431,20 @@ NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değe
             plan: planData
         });
 
+
+
     } catch (error) {
-        console.error(`[Error]`, error);
-        res.status(500).json({ error: error.message });
+        if (error.name === 'AbortError' || error.message === 'Aborted') {
+            console.log('[Analyst] Process aborted successfully.');
+            if (!res.headersSent) {
+                res.status(499).json({ error: 'canceled' });
+            }
+        } else {
+            console.error(`[Error]`, error);
+            if (!res.headersSent) {
+                res.status(500).json({ error: error.message });
+            }
+        }
     }
 });
 
