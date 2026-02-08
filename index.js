@@ -295,14 +295,33 @@ Output ONLY a JSON object:
         const totalEquity = (context.userPositions?.reduce((sum, p) => sum + parseFloat(p.unrealizedProfit || 0), 0) || 0) + parseFloat(usdt);
         const budget = Math.max(15, totalEquity * 0.1);
 
-        const systemPrompt = `InvestAI Sentez Merkezi (2026). Bütçe: $${budget.toFixed(2)}. Güncel Fiyatlar: ${priceContext}. Son derece öz, mantıklı ve TÜRKÇE konuş. Yanıtını \`\`\`json\`\`\` bloğuyla bitir.`;
+
+        const systemPrompt = `InvestAI Sentez Merkezi (2026). 
+**KRİTİK BAKIYE KISITI:** 
+- Kullanıcının mevcut USDT bakiyesi: $${usdt.toFixed(2)}
+- Maksimum tek pozisyon büyüklüğü: $${budget.toFixed(2)} (bakiyenin %10'u)
+- TÜM yeni pozisyonların TOPLAM marj gereksinimi ${usdt.toFixed(2)} USDT'yi aşmamalıdır.
+- Eğer bakiye yetersizse, daha küçük pozisyon boyutları önerin veya hiç pozisyon açma.
+
+Güncel Fiyatlar: ${priceContext}. 
+Son derece öz, mantıklı ve TÜRKÇE konuş. Yanıtını \`\`\`json\`\`\` bloğuyla bitir.`;
+
         const synthesisPrompt = `
 Goal: ${userQuery}
+**AVAILABLE USDT BALANCE: $${usdt.toFixed(2)}** 
+**MAX POSITION SIZE PER TRADE: $${budget.toFixed(2)}**
+**CRITICAL: Total margin requirement for ALL new positions MUST NOT exceed $${usdt.toFixed(2)} USDT.**
+
 Verified Prices: ${priceContext}
 Audit Findings: ${auditData.audit_findings}
 Adjustments Needed: ${JSON.stringify(auditData.recommended_adjustments)}
 Market Research: ${JSON.stringify(stepResults).substring(0, 25000)}
 Portfolio: ${JSON.stringify(context)}
+
+**BALANCE CHECK BEFORE RECOMMENDING:**
+- Calculate required margin for each position: (quantity × price) / leverage
+- Sum all new positions' required margin
+- If total > ${usdt.toFixed(2)} USDT, reduce quantity or skip recommendations
 
 Verdict & JSON Block:
 \`\`\`json
