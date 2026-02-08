@@ -8,6 +8,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Increase server timeout for long-running analysis (5 minutes)
+const SERVER_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
+
 const PORT = process.env.PORT || 3000;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY || '';
@@ -117,6 +120,10 @@ async function searchMarketData(query) {
 // --- Main Analyst Bot Logic ---
 
 app.post('/', async (req, res) => {
+    // Set timeout for this specific request
+    req.setTimeout(SERVER_TIMEOUT);
+    res.setTimeout(SERVER_TIMEOUT);
+
     try {
         let { userQuery, userBalances, userPositions, userId } = req.body;
 
