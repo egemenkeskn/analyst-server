@@ -129,10 +129,12 @@ app.post('/', async (req, res) => {
     const controller = new AbortController();
     const { signal } = controller;
 
-    // Listen for client disconnect
-    req.on('close', () => {
-        console.log('[Analyst] Client disconnected, aborting operations...');
-        controller.abort();
+    // Listen for response stream close (more reliable than req 'close' for disconnects)
+    res.on('close', () => {
+        if (!res.writableEnded) {
+            console.log('[Analyst] Response stream closed prematurely (Client disconnect), aborting...');
+            controller.abort();
+        }
     });
 
     try {
