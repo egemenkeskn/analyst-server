@@ -327,6 +327,23 @@ Output ONLY a JSON object:
 - TÜM yeni pozisyonların TOPLAM marj gereksinimi ${usdt.toFixed(2)} USDT'yi aşmamalıdır.
 - Eğer bakiye yetersizse, daha küçük pozisyon boyutları önerin veya hiç pozisyon açma.
 
+**BİNANCE İŞLEM KURALLARI (ZOD STRICT):**
+1. **Minimum Notional Value:**
+   - BTC/ETH/BNB için: En az 5 USDT değerinde işlem
+   - Diğer tüm coinler için: En az 20 USDT değerinde işlem
+   - Formül: (quantity × price) &&ge; MinimumNotional
+   - UYARI: 20 USDT'den küçük işlem önerme, reddedilir!
+
+2. **Quantity Validation:**
+   - suggested_quantity ASLA 0 (sıfır) olamaz
+   - suggested_quantity &&gt; 0 olmalı
+   - Zero quantity = Binance API hatası
+
+3. **Balance Sufficiency:**
+   - Her pozisyon için margin gereksinimi: (quantity × price) / leverage
+   - Toplam margin &&lt; ${usdt.toFixed(2)} USDT
+   - Eğer yetersizse quantity'yi azalt VEYA önerme
+
 Güncel Fiyatlar: ${priceContext}. 
 Son derece öz, mantıklı ve TÜRKÇE konuş. Yanıtını \`\`\`json\`\`\` bloğuyla bitir.`;
 
@@ -342,12 +359,25 @@ Adjustments Needed: ${JSON.stringify(auditData.recommended_adjustments)}
 Market Research: ${JSON.stringify(stepResults).substring(0, 25000)}
 Portfolio: ${JSON.stringify(context)}
 
+**BINANCE VALIDATION CHECKLIST (MANDATORY):**
+Before recommending ANY trade, validate:
+1. ✅ Quantity &&gt; 0 (NEVER suggest 0 quantity)
+2. ✅ Notional Value = quantity × ${priceContext} &&ge; Minimum (5 USDT for BTC/ETH/BNB, 20 USDT otherwise)
+3. ✅ Total margin for all positions = Σ(quantity × price) / leverage &&lt; ${usdt.toFixed(2)} USDT
+4. ✅ If validation fails, reduce quantity OR skip recommendation
+
+**EXAMPLE CALCULATION:**
+- ETHUSDT price: Find in Verified Prices above
+- If suggesting 0.01 ETH at $3000: Notional = 0.01 × 3000 = $30 USDT ✅ (exceeds 5 USDT minimum)
+- If suggesting 0.005 BTC at $100k: Notional = 0.005 × 100000 = $500 USDT ✅
+- If suggesting 0.5 SOLUSDT at $30: Notional = 0.5 × 30 = $15 USDT ❌ (below 20 USDT, REJECT)
+
 **BALANCE CHECK BEFORE RECOMMENDING:**
 - Calculate required margin for each position: (quantity × price) / leverage
 - Sum all new positions' required margin
-- If total > ${usdt.toFixed(2)} USDT, reduce quantity or skip recommendations
+- If total &&gt; ${usdt.toFixed(2)} USDT, reduce quantity or skip recommendations
 
-Verdict & JSON Block:
+Verdict &&amp; JSON Block:
 \`\`\`json
 {
   "type": "analysis_result", 
@@ -363,13 +393,13 @@ Verdict & JSON Block:
         "risk_level": "LOW", 
         "reasoning_summary": "Bu işlem için TÜRKÇE kısa gerekçe.", 
         "suggested_price": 0, 
-        "suggested_quantity": 0
+        "suggested_quantity": 0.001
       }
     ]
   }
 }
 \`\`\`
-Not: "suggested_quantity", sistemin varsayılan güvenlik bütçesini kullanmasını istiyorsanız 0 olabilir.
+Not: "suggested_quantity" ASLA 0 olmamalı. Minimum notional value kurallarını takip et.
 KRİTİK: TP ve SL değerlerini bağlamda sağlanan "Güncel Fiyatlar" (Current Prices) üzerinden hesaplayın. Fiyat uydurmayın.
 CLOSE (KAPAT) işlemleri için kaldıraç/SL/TP dikkate alınmaz.
 TÜM METİNLER TÜRKÇE OLMALIDIR.
