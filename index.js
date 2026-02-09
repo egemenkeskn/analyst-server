@@ -331,18 +331,36 @@ Output ONLY a JSON object:
 1. **Minimum Notional Value:**
    - BTC/ETH/BNB için: En az 5 USDT değerinde işlem
    - Diğer tüm coinler için: En az 20 USDT değerinde işlem
-   - Formül: (quantity × price) &&ge; MinimumNotional
+   - Formül: (quantity × price) >= MinimumNotional
    - UYARI: 20 USDT'den küçük işlem önerme, reddedilir!
 
 2. **Quantity Validation:**
    - suggested_quantity ASLA 0 (sıfır) olamaz
-   - suggested_quantity &&gt; 0 olmalı
+   - suggested_quantity > 0 olmalı
    - Zero quantity = Binance API hatası
 
 3. **Balance Sufficiency:**
    - Her pozisyon için margin gereksinimi: (quantity × price) / leverage
-   - Toplam margin &&lt; ${usdt.toFixed(2)} USDT
+   - Toplam margin < ${usdt.toFixed(2)} USDT
    - Eğer yetersizse quantity'yi azalt VEYA önerme
+
+**POZİSYON TUTARLILIK KURALLARI:**
+1. **Minimum Tutma Süresi:** Otonom mod tarafından açılan pozisyonlar en az 2 saat tutulmalıdır.
+   - Yeni pozisyonlar (< 2 saat) SADECE şu durumlarda kapatılabilir:
+     * Stop Loss tetiklenmesi veya %15+ zarar
+     * Temel trend tersine döndü (Tavily araştırması ile doğrulanmalı)
+   - Kısa vadeli fiyat dalgalanmaları (±3-5%) pozisyon kapatma sebebi DEĞİLDİR
+   - Normal piyasa gürültüsü pozisyon kapatmayı gerektirmez
+
+2. **Orijinal Analizi Koru:** Pozisyon açılmışsa, orijinal açılış sebebi (openingReason) hala geçerlidir.
+   - Pozisyonu kapatmadan ÖNCE yeni araştırma (Tavily) yap
+   - Uzun vadeli görünümü değerlendir, kısa vadeli gürültüyü yoksay
+   - SADECE trend tersine döndü, temel analiz değişti veya SL seviyelerine yaklaşıldı ise kapat
+
+3. **Stop Loss / Take Profit Önceliği:** Mevcut pozisyonlar zaten SL/TP ile korunuyorsa:
+   - TP veya SL'yi DEĞİŞTİRME
+   - Piyasa SL'i tetikleyecekse otomatik kapanacak
+   - Sadece izle, manuel müdahale gerektirmez
 
 Güncel Fiyatlar: ${priceContext}. 
 Son derece öz, mantıklı ve TÜRKÇE konuş. Yanıtını \`\`\`json\`\`\` bloğuyla bitir.`;
@@ -358,6 +376,28 @@ Audit Findings: ${auditData.audit_findings}
 Adjustments Needed: ${JSON.stringify(auditData.recommended_adjustments)}
 Market Research: ${JSON.stringify(stepResults).substring(0, 25000)}
 Portfolio: ${JSON.stringify(context)}
+
+**OPEN POSITIONS CONTEXT (CRITICAL FOR CONSISTENCY):**
+${context.userPositions?.map(p =>
+            p.ageHours
+                ? `- ${p.symbol}: Açıldı ${p.ageHours}h önce. Sebep: "${p.openingReason}". Güven: ${(p.openingConfidence * 100).toFixed(0)}%`
+                : `- ${p.symbol}: Manuel işlem (geçmiş yok)`
+        ).join('\n') || 'Açık pozisyon yok'}
+
+**DECISION FRAMEWORK FOR EXISTING POSITIONS:**
+1. **Pozisyon yaşı < 2 saat ise:**
+   - KAPATMA! Orijinal sebep hala geçerli
+   - İSTİSNALAR: %15+ zarar VEYA yeni Tavily araştırması trend tersine dönüş gösteriyorsa
+   - Kısa vadeli fiyat düşüşü (%3-5) = Normal volatilite, pozisyon koru
+
+2. **Pozisyon yaşı >= 2 saat ise:**
+   - Yeni araştırma yap (Tavily'deki güncel veriler)
+   - Uzun vadeli görünüm pozitifse pozisyonu koru
+   - Sadece temel trend değiştiyse kapat
+
+3. **Stop Loss check:**
+   - Eğer mevcut fiyat SL'e yakınsa (%2 mesafe), uyarı ver ama elle KAPATMA
+   - SL sistemi otomatik çalışacak, müdahale gerektirmez
 
 **BINANCE VALIDATION CHECKLIST (MANDATORY):**
 Before recommending ANY trade, validate:
