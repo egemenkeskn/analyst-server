@@ -362,6 +362,22 @@ Output ONLY a JSON object:
    - Piyasa SL'i tetikleyecekse otomatik kapanacak
    - Sadece izle, manuel müdahale gerektirmez
 
+**RİSK YÖNETİMİ VE KÂR HEDEFLERİ (YENİ KURALLAR):**
+1. **Gerçekçi Kâr Hedefleri (Take Profit):**
+   - Hedef: Giriş fiyatından SADECE %1.5 - %4 uzaklıkta olmalı (Kaldıraçsız fiyat değişimi).
+   - "Aya gidecek" hedefler KOYMA. Ulaşılabilir, garantici hedefler seç.
+   - ÖRNEK: BTC $50,000 ise, TP $50,750 (%1.5) ile $52,000 (%4) arasında olmalı.
+
+2. **Sıkı Zarar Kes (Stop Loss):**
+   - Max Zarar: Giriş fiyatından en fazla %2 uzaklıkta olmalı.
+   - Sermayeyi korumak BİRİNCİ önceliktir.
+   - R:R (Risk/Reward Oranı): En az 1:1.5 olmalı. (Potansiyel Kâr > Potansiyel Zarar).
+
+3. **Kaldıraç (Leverage):**
+   - Yüksek volatilite dönemlerinde MAX 5x kaldıraç öner.
+   - Stabil piyasada MAX 10x.
+   - Asla 20x üzeri önerme.
+
 Güncel Fiyatlar: ${priceContext}. 
 Son derece öz, mantıklı ve TÜRKÇE konuş. Yanıtını \`\`\`json\`\`\` bloğuyla bitir.`;
 
