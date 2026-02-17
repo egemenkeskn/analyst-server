@@ -388,6 +388,12 @@ Output ONLY a JSON object:
    - Eğer yetersizse quantity'yi azalt VEYA önerme
    - ANCAK: Quantity azaltırken notional value 100 USDT'nin altına düşmemeli!
 
+4. **Benzersiz Asset Kuralı (YENİ):**
+   - **AYNI ASSET'TEN SADECE BİR KEZ POZİSYON ÖNEREBİLİRSİN**
+   - Örnek: Eğer BTCUSDT için bir öneri yaptıysan, başka bir BTCUSDT önerisi YAPMA
+   - Her asset için maksimum 1 pozisyon öner
+   - Çeşitlendirme için farklı asset'ler seç (BTC, ETH, SOL, vb.)
+
 **POZİSYON TUTARLILIK KURALLARI:**
 1. **Minimum Tutma Süresi:** Otonom mod tarafından açılan pozisyonlar en az 2 saat tutulmalıdır.
    - Yeni pozisyonlar (< 2 saat) SADECE şu durumlarda kapatılabilir:
@@ -489,7 +495,7 @@ Verdict &&amp; JSON Block:
       {
         "action": "AL/SAT/KAPAT", 
         "asset": "BTCUSDT", 
-        "leverage": 1, 
+        "leverage": 5, 
         "stop_loss": 0, 
         "take_profit": 0, 
         "risk_level": "LOW", 
@@ -502,6 +508,7 @@ Verdict &&amp; JSON Block:
 }
 \`\`\`
 Not: "suggested_quantity" ASLA 0 olmamalı. Minimum notional value kurallarını takip et.
+**KRİTİK: "leverage" alanı HER ZAMAN belirtilmeli (1-20 arası). Eğer belirtilmezse default 1x kullanılır.**
 KRİTİK: TP ve SL değerlerini bağlamda sağlanan "Güncel Fiyatlar" (Current Prices) üzerinden hesaplayın. Fiyat uydurmayın.
 CLOSE (KAPAT) işlemleri için kaldıraç/SL/TP dikkate alınmaz.
 TÜM METİNLER TÜRKÇE OLMALIDIR.
@@ -516,11 +523,20 @@ NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değe
 
         // 4. Validate Recommendations
         const tradeRecommendations = [];
+        const seenAssets = new Set(); // Track assets to prevent duplicates
+
         for (const r of (rawData.data?.recommendations || [])) {
             const rawAction = (r.action || '').toUpperCase();
             if (rawAction === 'HOLD' || rawAction === 'STAY') continue;
 
             if (signal.aborted) throw new Error('Aborted');
+
+            // Check for duplicate assets
+            const cleanSymbol = (r.asset || '').toUpperCase().replace(/[\/\s-]/g, '');
+            if (seenAssets.has(cleanSymbol)) {
+                console.log(`[Analyst] ⚠️ Skipping duplicate recommendation for ${cleanSymbol}`);
+                continue;
+            }
 
             // Normalize Action Mapping
             let normalizedAction = 'HOLD';
@@ -580,6 +596,9 @@ NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değe
                     confidence: 0.9,
                     price: r.suggested_price || livePrice
                 });
+
+                // Mark this asset as seen to prevent duplicates
+                seenAssets.add(cleanSymbol);
             }
         }
 
