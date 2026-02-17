@@ -119,6 +119,46 @@ async function searchMarketData(query, signal) {
     }
 }
 
+// --- Health Check Endpoints for UptimeRobot ---
+
+/**
+ * Health check endpoint - keeps server alive on Render free tier
+ * UptimeRobot should ping this endpoint every 5 minutes
+ */
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        service: 'InvestAI Analyst Server',
+        version: '1.0.0'
+    });
+});
+
+/**
+ * Simple ping endpoint - minimal response for quick checks
+ */
+app.get('/ping', (req, res) => {
+    res.status(200).send('pong');
+});
+
+/**
+ * Root GET endpoint - provides API information
+ */
+app.get('/', (req, res) => {
+    res.status(200).json({
+        service: 'InvestAI Analyst Server',
+        version: '1.0.0',
+        status: 'running',
+        endpoints: {
+            health: 'GET /health - Health check endpoint',
+            ping: 'GET /ping - Simple ping endpoint',
+            analyze: 'POST / - Market analysis endpoint'
+        },
+        message: 'Server is running. Use POST / for market analysis.'
+    });
+});
+
 // --- Main Analyst Bot Logic ---
 
 app.post('/', async (req, res) => {
