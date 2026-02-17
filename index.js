@@ -537,12 +537,36 @@ NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değe
                 continue;
             }
 
-            const livePrice = await getBinancePrice(r.asset, signal); // Optional: check signal here too if needed
+            const livePrice = await getBinancePrice(r.asset, signal);
             if (livePrice) {
-                // If AI suggested a specific quantity, use it. Otherwise calculate based on budget.
-                const finalQuantity = r.suggested_quantity > 0
-                    ? parseFloat(r.suggested_quantity)
-                    : parseFloat((budget / livePrice).toFixed(4));
+                // Calculate quantity with 100 USDT minimum notional value enforcement
+                let finalQuantity = 0;
+
+                if (r.suggested_quantity > 0) {
+                    // AI suggested a quantity, validate it meets minimum
+                    const suggestedNotional = r.suggested_quantity * livePrice;
+                    if (suggestedNotional >= 100) {
+                        finalQuantity = parseFloat(r.suggested_quantity);
+                    } else {
+                        // AI's suggestion is too small, calculate minimum
+                        console.warn(`[Analyst] AI suggested quantity too small for ${r.asset}: ${r.suggested_quantity} (notional: $${suggestedNotional.toFixed(2)}). Calculating minimum...`);
+                        finalQuantity = parseFloat((100 / livePrice).toFixed(4));
+                    }
+                } else {
+                    // AI didn't suggest quantity, calculate based on budget with 100 USDT minimum
+                    const budgetQuantity = budget / livePrice;
+                    const minQuantity = 100 / livePrice;
+                    finalQuantity = parseFloat(Math.max(budgetQuantity, minQuantity).toFixed(4));
+                }
+
+                // Final validation: ensure notional value >= 100 USDT
+                const finalNotional = finalQuantity * livePrice;
+                if (finalNotional < 100) {
+                    console.warn(`[Analyst] Skipping ${r.asset}: Final notional value $${finalNotional.toFixed(2)} < $100 minimum`);
+                    continue; // Skip this recommendation
+                }
+
+                console.log(`[Analyst] ✅ ${r.asset}: quantity=${finalQuantity}, price=$${livePrice}, notional=$${finalNotional.toFixed(2)}`);
 
                 tradeRecommendations.push({
                     symbol: r.asset,
