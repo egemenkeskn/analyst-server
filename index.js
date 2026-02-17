@@ -369,21 +369,24 @@ Output ONLY a JSON object:
 - Eğer bakiye yetersizse, daha küçük pozisyon boyutları önerin veya hiç pozisyon açma.
 
 **BİNANCE İŞLEM KURALLARI (ZOD STRICT):**
-1. **Minimum Notional Value:**
-   - BTC/ETH/BNB için: En az 5 USDT değerinde işlem
-   - Diğer tüm coinler için: En az 20 USDT değerinde işlem
-   - Formül: (quantity × price) >= MinimumNotional
-   - UYARI: 20 USDT'den küçük işlem önerme, reddedilir!
+1. **Minimum Notional Value (KRİTİK):**
+   - **TÜM Binance Futures işlemleri için MUTLAK MİNİMUM: 100 USDT**
+   - Formül: (quantity × price) >= 100 USDT
+   - UYARI: 100 USDT'den küçük işlem önerme, Binance API tarafından reddedilir!
+   - Örnek: BTC $100,000 ise, minimum 0.001 BTC (= $100) öner
+   - Örnek: ETH $3,000 ise, minimum 0.0334 ETH (= $100) öner
 
 2. **Quantity Validation:**
    - suggested_quantity ASLA 0 (sıfır) olamaz
    - suggested_quantity > 0 olmalı
-   - Zero quantity = Binance API hatası
+   - Notional value kontrolü: (quantity × current_price) >= 100 USDT
+   - Eğer hesaplanan quantity ile notional < 100 USDT ise, quantity'yi artır VEYA hiç önerme
 
 3. **Balance Sufficiency:**
    - Her pozisyon için margin gereksinimi: (quantity × price) / leverage
    - Toplam margin < ${usdt.toFixed(2)} USDT
    - Eğer yetersizse quantity'yi azalt VEYA önerme
+   - ANCAK: Quantity azaltırken notional value 100 USDT'nin altına düşmemeli!
 
 **POZİSYON TUTARLILIK KURALLARI:**
 1. **Minimum Tutma Süresi:** Otonom mod tarafından açılan pozisyonlar en az 2 saat tutulmalıdır.
@@ -458,21 +461,23 @@ ${context.userPositions?.map(p =>
 
 **BINANCE VALIDATION CHECKLIST (MANDATORY):**
 Before recommending ANY trade, validate:
-1. ✅ Quantity &&gt; 0 (NEVER suggest 0 quantity)
-2. ✅ Notional Value = quantity × ${priceContext} &&ge; Minimum (5 USDT for BTC/ETH/BNB, 20 USDT otherwise)
-3. ✅ Total margin for all positions = Σ(quantity × price) / leverage &&lt; ${usdt.toFixed(2)} USDT
-4. ✅ If validation fails, reduce quantity OR skip recommendation
+1. ✅ Quantity > 0 (NEVER suggest 0 quantity)
+2. ✅ **Notional Value = quantity × current_price >= 100 USDT (MUTLAK MİNİMUM)**
+3. ✅ Total margin for all positions = Σ(quantity × price) / leverage < ${usdt.toFixed(2)} USDT
+4. ✅ If validation fails, EITHER increase quantity to meet 100 USDT minimum OR skip recommendation
 
-**EXAMPLE CALCULATION:**
-- ETHUSDT price: Find in Verified Prices above
-- If suggesting 0.01 ETH at $3000: Notional = 0.01 × 3000 = $30 USDT ✅ (exceeds 5 USDT minimum)
-- If suggesting 0.005 BTC at $100k: Notional = 0.005 × 100000 = $500 USDT ✅
-- If suggesting 0.5 SOLUSDT at $30: Notional = 0.5 × 30 = $15 USDT ❌ (below 20 USDT, REJECT)
+**EXAMPLE CALCULATION (100 USDT MİNİMUM):**
+- BTC $100,000 ise → Minimum quantity: 0.001 BTC (= $100) ✅
+- ETH $3,000 ise → Minimum quantity: 0.0334 ETH (= $100) ✅
+- SOL $150 ise → Minimum quantity: 0.667 SOL (= $100) ✅
+- UYARI: 0.0005 BTC at $100k = $50 ❌ (100 USDT'nin altında, REDDEDİLİR!)
+- UYARI: 0.01 ETH at $3000 = $30 ❌ (100 USDT'nin altında, REDDEDİLİR!)
 
 **BALANCE CHECK BEFORE RECOMMENDING:**
 - Calculate required margin for each position: (quantity × price) / leverage
 - Sum all new positions' required margin
-- If total &&gt; ${usdt.toFixed(2)} USDT, reduce quantity or skip recommendations
+- If total > ${usdt.toFixed(2)} USDT, reduce quantity or skip recommendations
+- ANCAK: Quantity azaltırken notional value 100 USDT'nin altına düşmemeli!
 
 Verdict &&amp; JSON Block:
 \`\`\`json
