@@ -13,11 +13,11 @@ const SERVER_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 const PORT = process.env.PORT || 3000;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
-const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY || '';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -71,20 +71,21 @@ async function getBinancePrice(symbol, signal) {
     }
 }
 
-async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1, signal) {
-    console.log(`[Analyst] Calling Claude 4.5 Sonnet...`);
-    const response = await fetch(ANTHROPIC_API_URL, {
+async function makeOpenAIRequest(systemPrompt, userPrompt, temperature = 0.1, signal) {
+    console.log(`[Analyst] Calling OpenAI GPT-4o-mini...`);
+    const response = await fetch(OPENAI_API_URL, {
         method: 'POST',
         headers: {
-            'x-api-key': CLAUDE_API_KEY,
-            'anthropic-version': '2023-06-01',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
             'content-type': 'application/json',
         },
         body: JSON.stringify({
-            model: "claude-sonnet-4-5", // Model ismi güncel API'ye uygun hale getirildi (veya elinizdeki spesifik model)
+            model: "gpt-4o-mini",
             max_tokens: 4000,
-            system: systemPrompt,
-            messages: [{ role: "user", content: userPrompt }],
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
             temperature,
         }),
         signal: signal || AbortSignal.timeout(120000) // User signal OR default timeout
@@ -92,7 +93,7 @@ async function makeClaudeRequest(systemPrompt, userPrompt, temperature = 0.1, si
 
     if (!response.ok) {
         const err = await response.text();
-        throw new Error(`Claude API error: ${err}`);
+        throw new Error(`OpenAI API error: ${err}`);
     }
     return await response.json();
 }
@@ -199,12 +200,12 @@ Output ONLY a JSON object IN TURKISH:
   "recommended_adjustments": ["Kapatılması veya azaltılması gereken varlıklar", "..."]
 }
 `;
-        const auditRes = await makeClaudeRequest("Sen Deneyimli bir Portföy Risk Yöneticisisin. Hesaplamalar için HER ZAMAN sağlanan GÜNCEL PİYASA FİYATLARINI (CURRENT MARKET PRICES) kullan. Tüm açıklamaların TÜRKÇE olsun.", auditPrompt, 0.2, signal);
+        const auditRes = await makeOpenAIRequest("Sen Deneyimli bir Portföy Risk Yöneticisisin. Hesaplamalar için HER ZAMAN sağlanan GÜNCEL PİYASA FİYATLARINI (CURRENT MARKET PRICES) kullan. Tüm açıklamaların TÜRKÇE olsun.", auditPrompt, 0.2, signal);
 
-        // Hata Yönetimi: Claude response content kontrolü
-        if (!auditRes.content || !auditRes.content[0]) throw new Error("Claude Empty Response");
+        // Hata Yönetimi: OpenAI response content kontrolü
+        if (!auditRes.choices || !auditRes.choices[0]) throw new Error("OpenAI Empty Response");
 
-        const auditContent = auditRes.content[0].text;
+        const auditContent = auditRes.choices[0].message.content;
         let auditData;
         try { auditData = extractJSON(auditContent); }
         catch (e) { auditData = { audit_findings: "Could not perform detailed audit, proceeding with caution.", recommended_adjustments: [] }; }
@@ -234,8 +235,8 @@ Output ONLY a JSON object IN TURKISH:
   ]
 }
 `;
-        const planRes = await makeClaudeRequest("Sen Baş Kıdemli Finansal Araştırmacısın. Tüm araştırma adımlarını TÜRKÇE planla.", planPrompt, 0.2, signal);
-        const planContent = planRes.content[0].text;
+        const planRes = await makeOpenAIRequest("Sen Baş Kıdemli Finansal Araştırmacısın. Tüm araştırma adımlarını TÜRKÇE planla.", planPrompt, 0.2, signal);
+        const planContent = planRes.choices[0].message.content;
         let planData;
         try { planData = extractJSON(planContent); }
         catch (e) {
@@ -284,8 +285,8 @@ Output ONLY a JSON object:
 `;
         let newCandidates = [];
         try {
-            const tickerRes = await makeClaudeRequest("You are a data extractor. Output JSON only.", tickerPrompt, 0.1, signal);
-            const tickerData = extractJSON(tickerRes.content[0].text);
+            const tickerRes = await makeOpenAIRequest("You are a data extractor. Output JSON only.", tickerPrompt, 0.1, signal);
+            const tickerData = extractJSON(tickerRes.choices[0].message.content);
             newCandidates = tickerData.candidate_tickers || [];
         } catch (e) {
             if (e.name === 'AbortError' || signal.aborted) throw e;
@@ -462,8 +463,8 @@ TÜM METİNLER TÜRKÇE OLMALIDIR.
 NOT: Mevcut açık pozisyonların TP/SL değerlerini GÜNCELLEME. TP ve SL değerleri SADECE yeni açılan (AL/SAT) pozisyonlar için verilmelidir. Mevcut pozisyonlar için sadece "KAPAT" veya "BEKLE" kararı ver.
 `;
 
-        const finalRes = await makeClaudeRequest(systemPrompt, synthesisPrompt, 0.4, signal);
-        const finalText = finalRes.content[0].text;
+        const finalRes = await makeOpenAIRequest(systemPrompt, synthesisPrompt, 0.4, signal);
+        const finalText = finalRes.choices[0].message.content;
         console.log(`[Analyst] Response Length: ${finalText.length}`);
 
         const rawData = extractJSON(finalText);
